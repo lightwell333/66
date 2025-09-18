@@ -181,11 +181,11 @@ addEventListener('selectstart', e=> e.preventDefault(), {passive:false});
    .forEach(k=> UI[k].addEventListener('input', ()=> state[k]=+UI[k].value, {passive:true}));
   UI.modeK.onclick = ()=> state.mode=0;
   UI.modeM.onclick = ()=> state.mode=1;
-
-  function fit(){
+function fit(){
     const dpr=Math.min(devicePixelRatio||1,2);
     const w=Math.floor(innerWidth*dpr), h=Math.floor(innerHeight*dpr);
     if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
+  
   }
   addEventListener('resize', fit, {passive:true}); fit();
 
@@ -368,9 +368,13 @@ addEventListener('selectstart', e=> e.preventDefault(), {passive:false});
       if(!('MediaRecorder' in window)) return alert('MediaRecorder not supported.');
 
       chunks=[];
-      const mt=pickType();
-      try{ rec = mt? new MediaRecorder(s,{mimeType:mt}) : new MediaRecorder(s); }
-      catch(e){ console.error(e); return alert('Recorder could not start (codec).'); }
+      const mt = pickType();
+const opts = mt
+  ? { mimeType: mt, videoBitsPerSecond: 12_000_000 } // 12 Mbps
+  : {                 videoBitsPerSecond: 12_000_000 };
+
+try { rec = new MediaRecorder(s, opts); }
+catch(e){ console.error(e); return alert('Recorder could not start (codec).'); }
 
       rec.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
       rec.onstop = () => {
