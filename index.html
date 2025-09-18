@@ -351,7 +351,7 @@ addEventListener('selectstart', e=> e.preventDefault(), {passive:false});
   });
 
   /* ===== Robust Record (Start/Stop toggle) ===== */
-  (function(){
+  function(){
     const btn = UI.rec;
     const lamp = UI.recLamp;
     let stream=null, rec=null, chunks=[], recording=false;
