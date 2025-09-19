@@ -1,4 +1,395 @@
-<!doctype html>
+<!-- ===== SlideBar Pro — vertical slide + bend + extra FX + loop + rec-all ===== -->
+<script>
+(() => {
+  if (document.getElementById('sb-host')) return;
+
+  const host = document.createElement('div');
+  host.id = 'sb-host';
+  host.style.all = 'initial';
+  host.style.position = 'fixed';
+  host.style.zIndex = '2147483647';
+  document.body.appendChild(host);
+  const root = host.attachShadow({mode:'open'});
+
+  root.innerHTML = `
+    <style>
+      :root{ --glow:#7bffb3; --fg:#eafff4; --muted:#9fd0c0; --line:#153425; --bg:#01150f; }
+      /* Launcher (stacked above Guitar & Slide) */
+      .pill{
+        position:fixed; right:14px; bottom:126px; /* SLIDEBAR above GUITAR(70px) & SLIDE(14px) */
+        padding:12px 20px; border-radius:999px;
+        background:var(--bg); border:1px solid var(--line);
+        color:var(--fg); font-weight:900; font-size:16px; letter-spacing:.8px; cursor:pointer;
+        box-shadow:0 0 14px var(--glow), 0 0 32px rgba(123,255,179,.7);
+        user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; touch-action:manipulation;
+      }
+      .pill:active{ transform:scale(.96) }
+
+      .panel{
+        position:fixed; inset:0; display:none; background:rgba(0,0,0,.92); backdrop-filter:blur(10px);
+        color:var(--fg); user-select:none; -webkit-user-select:none; -webkit-touch-callout:none;
+      }
+      .panel.open{ display:block }
+      .close{
+        position:absolute; top:14px; right:16px; background:var(--glow); color:#003025;
+        border:none; border-radius:999px; padding:.45rem .9rem; font-weight:900; cursor:pointer;
+        box-shadow:0 0 16px var(--glow);
+      }
+
+      .wrap{ max-width:1100px; margin:60px auto 20px; padding:0 14px; display:flex; flex-direction:column; gap:12px }
+      .card{
+        background:rgba(10,14,12,.92); border:1px solid var(--line); border-radius:12px; padding:12px;
+        box-shadow:0 12px 44px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.06);
+      }
+      .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap }
+      .col{ display:flex; flex-direction:column; gap:6px; min-width:200px }
+      .lbl{ font:12px/1 system-ui; color:var(--muted) }
+      .btn{
+        background:var(--glow); color:#00261e; font-weight:800; border:none; cursor:pointer;
+        padding:.55rem 1rem; border-radius:10px; font-size:15px; box-shadow:0 0 12px var(--glow),0 0 24px var(--glow);
+      }
+      .select{ background:#071a14; color:var(--fg); border:1px solid var(--line); border-radius:10px; padding:.55rem .8rem; }
+      .slider{ -webkit-appearance:none; appearance:none; height:10px; border-radius:10px; background:#0f1a14; outline:none; box-shadow:inset 0 0 0 1px #183225, 0 0 10px rgba(123,255,179,.25) }
+      .slider::-webkit-slider-thumb{ -webkit-appearance:none; width:22px; height:22px; border-radius:50%; background:var(--glow); box-shadow:0 0 14px var(--glow) }
+      .slider::-moz-range-thumb{ width:22px; height:22px; border-radius:50%; background:var(--glow); box-shadow:0 0 14px var(--glow) }
+
+      /* Slide bar */
+      #slidebar{
+        position:relative; width:90px; height:360px; margin:10px; border:1px solid #183225; border-radius:16px;
+        background:linear-gradient(180deg,#0b1713,#08130f);
+        touch-action:none;
+      }
+      #marker{ position:absolute; left:10%; right:10%; height:6px; border-radius:6px; background:var(--glow); box-shadow:0 0 14px var(--glow); pointer-events:none; }
+      .scale{
+        flex:1; display:grid; grid-template-columns:repeat(8,minmax(60px,1fr)); gap:8px; align-items:end;
+      }
+      .note{
+        background:#0e1b16; border:1px solid #163729; color:#bfffe3; border-radius:10px; padding:.4rem .6rem; text-align:center;
+        box-shadow:inset 0 0 0 1px #0f2c20;
+      }
+
+      .vu{ width:14px; height:66px; border:1px solid #183225; border-radius:6px; background:#0c1117; overflow:hidden }
+      .vu .bar{ width:100%; height:0; background:linear-gradient(#c6ffd7,#7bffb3) }
+      .prog{ position:relative; height:12px; background:#0c1117; border:1px solid #183225; border-radius:999px; overflow:hidden; min-width:220px }
+      .prog > span{ position:absolute; top:0; left:0; bottom:0; width:0%; background:#7bffb3; box-shadow:0 0 10px #7bffb3 }
+    </style>
+
+    <button id="pill" class="pill">SLIDEBAR</button>
+
+    <div id="panel" class="panel">
+      <button id="close" class="close">X</button>
+      <div class="wrap">
+
+        <!-- Slide + scale notes -->
+        <section class="card">
+          <div class="row">
+            <div class="col">
+              <span class="lbl">Slide Bar — touch to play · drag up = bend (up to +12 semitones)</span>
+              <div id="slidebar"><div id="marker" style="top:50%"></div></div>
+            </div>
+            <div class="col" style="min-width:420px">
+              <span class="lbl">Scale notes (tap: sets target note / base)</span>
+              <div class="scale" id="scaleRow"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Core & Pitch -->
+        <section class="card">
+          <div class="row">
+            <div class="col"><span class="lbl">Master Vol</span><input id="masterVol" class="slider" type="range" min="0" max="1.4" step="0.01" value="1.0"></div>
+            <div class="col"><span class="lbl">Pad Level</span><input id="padLevel" class="slider" type="range" min="0.5" max="3" step="0.01" value="1.3"></div>
+            <div class="col"><span class="lbl">Octave</span><input id="octave" class="slider" type="range" min="-2" max="2" step="1" value="0"></div>
+            <div class="col"><span class="lbl">Base (Hz)</span><input id="baseHz" class="slider" type="range" min="40" max="220" step="1" value="110"></div>
+            <div class="col"><span class="lbl">Range (Oct)</span><input id="rangeOct" class="slider" type="range" min="1" max="5" step="0.1" value="3"></div>
+            <div class="col"><span class="lbl">Glide (ms)</span><input id="glide" class="slider" type="range" min="0" max="200" step="1" value="14"></div>
+          </div>
+        </section>
+
+        <!-- Extra FX -->
+        <section class="card">
+          <div class="row">
+            <div class="col"><span class="lbl">Low-Pass</span><input id="fxLP" class="slider" type="range" min="300" max="10000" step="1" value="4200"></div>
+            <div class="col"><span class="lbl">Drive</span><input id="fxDrive" class="slider" type="range" min="0" max="1" step="0.01" value="0.35"></div>
+            <div class="col"><span class="lbl">Chorus Mix</span><input id="fxChorus" class="slider" type="range" min="0" max="1" step="0.01" value="0.25"></div>
+            <div class="col"><span class="lbl">Phaser Rate</span><input id="fxPhRate" class="slider" type="range" min="0" max="4" step="0.01" value="0.5"></div>
+            <div class="col"><span class="lbl">Delay Mix</span><input id="fxDelay" class="slider" type="range" min="0" max="0.8" step="0.01" value="0.26"></div>
+            <div class="col"><span class="lbl">Reverb Mix</span><input id="fxVerb" class="slider" type="range" min="0" max="0.8" step="0.01" value="0.22"></div>
+            <div class="col"><span class="lbl">Limiter Drive</span><input id="limDrive" class="slider" type="range" min="0" max="24" step="0.1" value="10"></div>
+            <div class="col"><span class="lbl">Output Boost</span><input id="outBoost" class="slider" type="range" min="0.5" max="3" step="0.01" value="1.3"></div>
+            <div class="col"><span class="lbl">Soft Clip</span><input id="clipAmt" class="slider" type="range" min="0" max="1" step="0.01" value="0.22"></div>
+          </div>
+        </section>
+
+        <!-- Loop + Rec All -->
+        <section class="card">
+          <div class="row">
+            <button class="btn" id="loopRec">● Loop Rec</button>
+            <button class="btn" id="loopStopRec" disabled>■ Stop</button>
+            <button class="btn" id="loopPlay" disabled>▶ Play</button>
+            <button class="btn" id="loopStop" disabled>⏹ Stop</button>
+            <button class="btn" id="loopClear" disabled>✖ Clear</button>
+            <div class="col"><span class="lbl">Loop Vol</span><input id="loopVol" class="slider" type="range" min="0" max="2.5" step="0.01" value="1.1"></div>
+            <div class="col"><span class="lbl">Loop Speed</span><input id="loopSpd" class="slider" type="range" min="0.5" max="1.5" step="0.01" value="1"></div>
+            <button class="btn" id="recAllStart">ALL ●</button>
+            <button class="btn" id="recAllStop" disabled>ALL ⏹</button>
+            <div class="row" style="gap:8px">
+              <div class="vu"><div class="bar" id="vuL"></div></div>
+              <div class="vu"><div class="bar" id="vuR"></div></div>
+            </div>
+            <div class="col"><span class="lbl">Progress</span><div class="prog"><span id="prog"></span></div></div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  `;
+
+  const $ = s=>root.querySelector(s);
+  const pill=$('#pill'), panel=$('#panel'), closeBtn=$('#close');
+  pill.onclick=()=> panel.classList.add('open');
+  closeBtn.onclick=()=> panel.classList.remove('open');
+
+  /* ===== Audio Core ===== */
+  const AC = new (window.AudioContext||window.webkitAudioContext)();
+  const master = AC.createGain(); master.gain.value = +$('#masterVol').value;
+
+  const comp = AC.createDynamicsCompressor();
+  function setLimiterDrive(db){ comp.threshold.value = -12 - db*0.6; comp.knee.value=10; comp.ratio.value=12; comp.attack.value=.003; comp.release.value=.09; }
+  setLimiterDrive(+$('#limDrive').value);
+
+  const clipper = AC.createWaveShaper();
+  function mkClip(a){ const n=2048,c=new Float32Array(n),k=a*20+1e-3; for(let i=0;i<n;i++){ const x=i/n*2-1; c[i]=Math.tanh(x*k); } return c; }
+  clipper.curve = mkClip(+$('#clipAmt').value);
+
+  const outBoost = AC.createGain(); outBoost.gain.value = +$('#outBoost').value;
+
+  master.connect(comp).connect(clipper).connect(outBoost).connect(AC.destination);
+
+  // FX: LP -> Drive -> (Chorus->Phaser)-> Delay -> Verb -> Master
+  const lp = AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = +$('#fxLP').value;
+  const drive = AC.createWaveShaper(); function curve(a){ const n=2048,c=new Float32Array(n); for(let i=0;i<n;i++){ const x=i/n*2-1; c[i]=(1+a)*x/(1+a*Math.abs(x)); } return c; }
+  drive.curve = curve(+$('#fxDrive').value);
+
+  // Chorus (short delay mod)
+  const chorusDelay = AC.createDelay(0.03); chorusDelay.delayTime.value = 0.015;
+  const chorusMix   = AC.createGain(); chorusMix.gain.value = +$('#fxChorus').value;
+  const chorusLFO   = AC.createOscillator(); chorusLFO.type='sine'; chorusLFO.frequency.value=0.25;
+  const chorusDepth = AC.createGain(); chorusDepth.gain.value = 0.006; // 6ms depth
+  chorusLFO.connect(chorusDepth).connect(chorusDelay.delayTime); chorusLFO.start();
+
+  // Phaser (allpass sweep)
+  function makeAllpass(freq){ const ap = AC.createBiquadFilter(); ap.type='allpass'; ap.frequency.value=freq; return ap; }
+  const ap1=makeAllpass(400), ap2=makeAllpass(800), ap3=makeAllpass(1600), ap4=makeAllpass(3200);
+  ap1.connect(ap2).connect(ap3).connect(ap4);
+  const phaserRate = $('#fxPhRate'); const phLFO = AC.createOscillator(); phLFO.type='sine'; phLFO.frequency.value=+phaserRate.value||0.5;
+  const phGain1=AC.createGain(), phGain2=AC.createGain(), phGain3=AC.createGain(), phGain4=AC.createGain();
+  phGain1.gain.value=300; phGain2.gain.value=600; phGain3.gain.value=1200; phGain4.gain.value=1800;
+  phLFO.connect(phGain1); phLFO.connect(phGain2); phLFO.connect(phGain3); phLFO.connect(phGain4);
+  phGain1.connect(ap1.frequency); phGain2.connect(ap2.frequency); phGain3.connect(ap3.frequency); phGain4.connect(ap4.frequency);
+  phLFO.start();
+
+  const delay = AC.createDelay(1.0); delay.delayTime.value=.28;
+  const dMix  = AC.createGain(); dMix.gain.value=+$('#fxDelay').value;
+  const dFB   = AC.createGain(); dFB.gain.value=.32; delay.connect(dFB).connect(delay);
+
+  const verb  = AC.createConvolver(); (()=>{
+    const rate=AC.sampleRate,len=rate*2|0,buf=AC.createBuffer(2,len,rate);
+    for(let ch=0; ch<2; ch++){ const data=buf.getChannelData(ch); for(let i=0;i<len;i++){ data[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.4); } }
+    verb.buffer = buf;
+  })();
+  const vMix  = AC.createGain(); vMix.gain.value = +$('#fxVerb').value;
+
+  // Wire chain: synth -> lp -> drive -> chorus -> phaser -> (dry to master) + (delay/verb sends)
+  const fxBus = AC.createGain(); // synth connects here
+  fxBus.connect(lp).connect(drive);
+  drive.connect(chorusDelay).connect(ap1);  // wet into phaser
+  drive.connect(ap1);                       // also feed phaser from dry drive (for more swirl)
+  ap4.connect(master);
+  ap4.connect(delay).connect(dMix).connect(master);
+  ap4.connect(verb).connect(vMix).connect(master);
+  drive.connect(chorusMix).connect(master); // small direct chorus mix
+
+  // UI hooks
+  $('#masterVol').oninput = e=> master.gain.value = +e.target.value;
+  $('#fxLP').oninput      = e=> lp.frequency.value = +e.target.value;
+  $('#fxDrive').oninput   = e=> drive.curve = curve(+e.target.value);
+  $('#fxChorus').oninput  = e=> chorusMix.gain.value = +e.target.value;
+  phaserRate.oninput      = e=> phLFO.frequency.value = +e.target.value || 0;
+  $('#fxDelay').oninput   = e=> dMix.gain.value = +e.target.value;
+  $('#fxVerb').oninput    = e=> vMix.gain.value = +e.target.value;
+  $('#limDrive').oninput  = e=> setLimiterDrive(+e.target.value);
+  $('#clipAmt').oninput   = e=> clipper.curve = mkClip(+e.target.value);
+  $('#outBoost').oninput  = e=> outBoost.gain.value = +e.target.value;
+
+  /* ===== Synth (vertical slide) ===== */
+  let osc=null, gain=null; let PAD_LVL=+$('#padLevel').value;
+  $('#padLevel').oninput = e=> PAD_LVL = +e.target.value;
+
+  function startOsc(freq){
+    if(osc) return;
+    osc = AC.createOscillator(); osc.type='sawtooth';
+    gain = AC.createGain(); gain.gain.value=0;
+    osc.connect(gain).connect(fxBus);
+    osc.frequency.value = freq; osc.start();
+    gain.gain.setTargetAtTime(PAD_LVL, AC.currentTime, 0.01);
+  }
+  function stopOsc(){
+    if(!osc) return;
+    gain.gain.setTargetAtTime(0, AC.currentTime, 0.06);
+    try{ osc.stop(AC.currentTime+0.08); }catch{}
+    setTimeout(()=>{ try{ osc.disconnect(); gain.disconnect(); }catch{}; osc=null; gain=null; }, 120);
+  }
+
+  function freqFromY(y){
+    const bar = $('#slidebar').getBoundingClientRect();
+    const frac = 1 - Math.min(1, Math.max(0, (y - bar.top)/bar.height)); // 0..1
+    const base=+$('#baseHz').value, range=+$('#rangeOct').value, oct=+$('#octave').value;
+    return base * Math.pow(2, oct + frac*range);
+  }
+  function setMarker(y){
+    const bar = $('#slidebar').getBoundingClientRect();
+    const clamped = Math.min(bar.bottom, Math.max(bar.top, y));
+    $('#marker').style.top = (clamped - bar.top) + 'px';
+  }
+
+  // Bend amount (0..+12 semitones based on distance above touch origin)
+  let touchBaseF=0, startY=0;
+  function bendFromDelta(dy){ // dy negative when dragging up
+    const semis = Math.min(12, Math.max(0, (-dy) / 6)); // 6px per semitone (~+12 max)
+    return Math.pow(2, semis/12);
+  }
+
+  // Scale notes (tap to set base target quickly)
+  const scaleHz = (root=>{
+    // A minor pentatonic over one octave (8 notes)
+    const ratios = [1, 6/5, 4/3, 3/2, 2, 12/5, 8/3, 3]; // rough musical spread
+    return function(base){ return ratios.map(r=> base*r); };
+  })();
+  function buildScale(){
+    const row = $('#scaleRow'); row.innerHTML='';
+    const base = +$('#baseHz').value;
+    scaleHz(base).forEach((hz,i)=>{
+      const d=document.createElement('div'); d.className='note';
+      d.textContent = (['1','♭3','4','5','8','♭10','♭13','15'][i]||'');
+      d.title = hz.toFixed(1)+' Hz';
+      d.onclick = ()=>{ touchBaseF = hz; if(AC.state!=='running') AC.resume(); startOsc(hz); setTimeout(()=>stopOsc(), 150); };
+      row.appendChild(d);
+    });
+  }
+  buildScale();
+  $('#baseHz').oninput = ()=> buildScale();
+
+  // Interactions
+  let down=false, id=null;
+  const slide = $('#slidebar');
+  slide.addEventListener('pointerdown', e=>{
+    e.preventDefault();
+    if(AC.state!=='running') AC.resume();
+    down=true; id=e.pointerId; slide.setPointerCapture(id);
+    startY = e.clientY; touchBaseF = freqFromY(e.clientY);
+    startOsc(touchBaseF); setMarker(e.clientY);
+  }, {passive:false});
+  slide.addEventListener('pointermove', e=>{
+    if(!down || e.pointerId!==id) return;
+    e.preventDefault();
+    const target = touchBaseF * bendFromDelta(e.clientY - startY);
+    const t = Math.max(0.001, (+$('#glide').value)/1000);
+    try{ osc.frequency.setTargetAtTime(target, AC.currentTime, t); }catch{ if(osc) osc.frequency.value=target; }
+    setMarker(e.clientY);
+  }, {passive:false});
+  slide.addEventListener('pointerup', e=>{ if(e.pointerId!==id) return; e.preventDefault(); down=false; id=null; stopOsc(); }, {passive:false});
+  slide.addEventListener('pointercancel', ()=>{ down=false; id=null; stopOsc(); }, {passive:false});
+  slide.addEventListener('contextmenu', e=> e.preventDefault(), {passive:false});
+
+  /* ===== Looper + VU + Record-All ===== */
+  const L = { rec:$('#loopRec'), stopR:$('#loopStopRec'), play:$('#loopPlay'), stop:$('#loopStop'), clear:$('#loopClear'), vol:$('#loopVol'), spd:$('#loopSpd'), vuL:$('#vuL'), vuR:$('#vuR'), prog:$('#prog') };
+  const tap = AC.createGain(); outBoost.connect(tap); // record post-boost
+  let recNode=null, recL=[], recR=[], loopBuf=null, loopSrc=null, loopGain=null, ana=null, raf=null, playStart=0;
+
+  function setLoopState(s){ L.rec.disabled=(s==='rec'||s==='playing'); L.stopR.disabled=(s!=='rec'); L.play.disabled=!loopBuf; L.stop.disabled=(s!=='playing'); L.clear.disabled=!loopBuf; }
+
+  function startRec(){
+    recL=[]; recR=[];
+    recNode = AC.createScriptProcessor(2048,2,2);
+    recNode.onaudioprocess = e=>{
+      const Lb=e.inputBuffer.getChannelData(0), Rb=e.inputBuffer.numberOfChannels>1?e.inputBuffer.getChannelData(1):Lb;
+      recL.push(new Float32Array(Lb)); recR.push(new Float32Array(Rb));
+    };
+    tap.connect(recNode); recNode.connect(AC.destination);
+    setLoopState('rec');
+  }
+  function stopRec(){
+    if(!recNode) return;
+    try{ tap.disconnect(recNode); }catch{} try{ recNode.disconnect(); }catch{};
+    recNode.onaudioprocess=null; recNode=null;
+    const len=recL.reduce((n,a)=>n+a.length,0); if(!len){ setLoopState('idle'); return; }
+    loopBuf = AC.createBuffer(2,len,AC.sampleRate);
+    let o=0; const Lch=loopBuf.getChannelData(0); for(const a of recL){ Lch.set(a,o); o+=a.length; }
+    o=0; const Rch=loopBuf.getChannelData(1); for(const a of recR){ Rch.set(a,o); o+=a.length; }
+    loopGain = loopGain || AC.createGain(); loopGain.gain.value = +L.vol.value;
+    setLoopState('ready');
+  }
+  function playLoop(){
+    if(!loopBuf) return; stopLoop();
+    loopSrc = AC.createBufferSource();
+    loopSrc.buffer=loopBuf; loopSrc.loop=true; loopSrc.playbackRate.value=+L.spd.value;
+    if(!ana){ ana=AC.createAnalyser(); ana.fftSize=1024; }
+    loopSrc.connect(loopGain).connect(master).connect(ana);
+    loopSrc.start(); playStart=AC.currentTime; setLoopState('playing'); meters();
+  }
+  function stopLoop(){ if(loopSrc){ try{loopSrc.stop()}catch{}; try{loopSrc.disconnect()}catch{}; loopSrc=null; } if(raf){ cancelAnimationFrame(raf); raf=null; } L.prog.style.width='0%'; }
+  function clearLoop(){ stopLoop(); loopBuf=null; if(loopGain) try{ loopGain.disconnect(); }catch{}; setLoopState('idle'); }
+
+  L.rec.onclick = ()=>{ if(AC.state!=='running') AC.resume(); startRec(); };
+  L.stopR.onclick = ()=> stopRec();
+  L.play.onclick = ()=> playLoop();
+  L.stop.onclick = ()=>{ stopLoop(); setLoopState('ready'); };
+  L.clear.onclick = ()=> clearLoop();
+  L.vol.oninput = ()=>{ if(loopGain) loopGain.gain.value = +L.vol.value; };
+  L.spd.oninput = ()=>{ if(loopSrc) loopSrc.playbackRate.value = +L.spd.value; };
+
+  function meters(){
+    const data = new Uint8Array((ana||AC.createAnalyser()).frequencyBinCount);
+    const tick = ()=>{
+      if(!ana){ raf && cancelAnimationFrame(raf); return; }
+      ana.getByteTimeDomainData(data);
+      let pk=0; for(let i=0;i<data.length;i++){ const v=(data[i]-128)/128; pk=Math.max(pk,Math.abs(v)); }
+      const h=Math.min(100,Math.floor(pk*160));
+      L.vuL.style.height=h+'%'; L.vuR.style.height=h+'%';
+      if(loopSrc && loopBuf){
+        const dur = loopBuf.duration / (+L.spd.value||1);
+        const t = (AC.currentTime - playStart) % dur;
+        L.prog.style.width = (t/dur*100).toFixed(1)+'%';
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+  }
+  setLoopState('idle');
+
+  /* ===== Record All ===== */
+  const recAllStart=$('#recAllStart'), recAllStop=$('#recAllStop');
+  const recBus = AC.createMediaStreamDestination(); outBoost.connect(recBus);
+  let recAll=null, chunks=[];
+  recAllStart.onclick = ()=>{
+    chunks=[];
+    try{ recAll=new MediaRecorder(recBus.stream,{mimeType:'audio/webm;codecs=opus', audioBitsPerSecond:256000}); }
+    catch{ try{ recAll=new MediaRecorder(recBus.stream); } catch(e){ alert('Recording not supported.'); return; } }
+    recAll.ondataavailable = e=>{ if(e.data?.size) chunks.push(e.data); };
+    recAll.onstop = ()=>{
+      if(!chunks.length) return;
+      const blob = new Blob(chunks, {type: recAll.mimeType || 'audio/webm'});
+      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='SlideBar_mix.webm'; a.click();
+    };
+    recAll.start(); recAllStart.disabled=true; recAllStop.disabled=false; if(AC.state!=='running') AC.resume();
+  };
+  recAllStop.onclick = ()=>{ try{ recAll?.stop(); }catch{}; recAllStart.disabled=false; recAllStop.disabled=true; };
+
+  // Unlock audio on first interaction
+  root.addEventListener('pointerdown', ()=>{ if(AC.state!=='running') AC.resume(); }, {once:true, passive:true});
+})();
+</script><!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
